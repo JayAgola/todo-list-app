@@ -52,10 +52,10 @@ const TodoApp = ({ user }) => {
       specialChars: true
     },
     dueDate: {
-      required: true
+      required: false
     },
     dueTime: {
-      required: true
+      required: false
     }
   };
 
@@ -77,7 +77,7 @@ const TodoApp = ({ user }) => {
     }
 
     if (value && config.specialChars === false) {
-      const specialCharsRegex = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>?]/;
+      const specialCharsRegex = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>?]/;
       if (specialCharsRegex.test(value)) {
         fieldErrors.push(`${fieldName} cannot contain special characters`);
       }
@@ -260,10 +260,23 @@ const TodoApp = ({ user }) => {
     }
   };
 
-  const isTaskOverdue = (task) => {
+// Fixed isTaskOverdue function
+const isTaskOverdue = (task) => {
+  if (!task.dueDate) return false; // No due date means not overdue
+  
+  if (task.dueTime) {
+    // If both date and time are specified, use exact datetime comparison
     const taskDateTime = new Date(`${task.dueDate}T${task.dueTime}`);
     return taskDateTime < currentTime && task.status !== 'Completed';
-  };
+  } else {
+    // If only date is specified, consider it overdue only after the end of that day
+    const taskDate = new Date(task.dueDate);
+    const endOfTaskDay = new Date(taskDate);
+    endOfTaskDay.setHours(23, 59, 59, 999); // Set to end of day
+    
+    return endOfTaskDay < currentTime && task.status !== 'Completed';
+  }
+};
 
   const getTimeFilteredTasks = (tasks) => {
     const now = new Date();
@@ -303,7 +316,9 @@ const TodoApp = ({ user }) => {
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     switch (sortBy) {
       case 'dueDate':
-        return new Date(`${a.dueDate}T${a.dueTime}`) - new Date(`${b.dueDate}T${b.dueTime}`);
+            const aDate = new Date(`${a.dueDate}T${a.dueTime || '12:00'}`);
+            const bDate = new Date(`${b.dueDate}T${b.dueTime || '12:00'}`);
+        return aDate - bDate;
       case 'priority':
         const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
         return priorityOrder[b.priority] - priorityOrder[a.priority];
@@ -328,26 +343,62 @@ const TodoApp = ({ user }) => {
 
   const counts = getTaskCounts();
 
-  const formatDateTime = (date, time) => {
-    const dateObj = new Date(`${date}T${time}`);
-    return dateObj.toLocaleString();
-  };
+// Fixed formatDateTime function
+const formatDateTime = (date, time) => {
+  if (!date) return 'No date';
+  
+  if (time) {
+    const dateTime = new Date(`${date}T${time}`);
+    return isNaN(dateTime.getTime())
+      ? 'Invalid date'
+      : dateTime.toLocaleString(undefined, {
+          hour12: false,
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+  } else {
+    // If no time, just show the date
+    const dateOnly = new Date(date);
+    return isNaN(dateOnly.getTime())
+      ? 'Invalid date'
+      : dateOnly.toLocaleDateString(undefined, {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        }) + ' (End of day)';
+  }
+};
+// Fixed getTimeRemaining function
+const getTimeRemaining = (task) => {
+  if (!task.dueDate) return 'No due date';
+  
+  let taskDateTime;
+  if (task.dueTime) {
+    taskDateTime = new Date(`${task.dueDate}T${task.dueTime}`);
+  } else {
+    // If no time specified, use end of day
+    taskDateTime = new Date(task.dueDate);
+    taskDateTime.setHours(23, 59, 59, 999);
+  }
+  
+  const now = new Date();
+  const diff = taskDateTime - now;
 
-  const getTimeRemaining = (task) => {
-    const taskDateTime = new Date(`${task.dueDate}T${task.dueTime}`);
-    const now = new Date();
-    const diff = taskDateTime - now;
-    
-    if (diff < 0) return 'Overdue';
-    
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
-  };
+  if (diff < 0) return 'Overdue';
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+};
+
+
 
   // Error display component
   const ErrorDisplay = ({ errors }) => {
@@ -464,7 +515,7 @@ const TodoApp = ({ user }) => {
             
             <div className="form-row">
               <div className="form-group">
-                <label>Due Date <span className="required">*</span></label>
+                <label>Due Date </label>
                 <input
                   type="date"
                   value={newTask.dueDate}
@@ -479,7 +530,7 @@ const TodoApp = ({ user }) => {
               </div>
               
               <div className="form-group">
-                <label>Due Time <span className="required">*</span></label>
+                <label>Due Time </label>
                 <input
                   type="time"
                   value={newTask.dueTime}
@@ -586,7 +637,8 @@ const TodoApp = ({ user }) => {
               
               return (
                 <div key={task.id} className={`task-card ${isOverdue ? 'overdue' : ''}`}>
-                  {isEditing ? (
+                  {
+                  isEditing ? (
                     <div className="edit-form">
                       <div className="form-group">
                         <label>Subject <span className="required">*</span></label>
@@ -717,18 +769,28 @@ const TodoApp = ({ user }) => {
                       <p className="task-description">{task.description}</p>
                       
                       <div className="task-meta">
-                        <div className="task-datetime">
-                          <span className="datetime-icon">📅</span>
-                          <span>{formatDateTime(task.dueDate, task.dueTime)}</span>
-                        </div>
-                        
-                        <div className="task-time-remaining">
-                          <span className="time-icon">⏱️</span>
-                          <span className={isOverdue ? 'overdue-text' : ''}>
-                            {getTimeRemaining(task)}
-                          </span>
-                        </div>
-                      </div>
+                            {task.dueDate ? (
+                                <>
+                                <div className="task-datetime">
+                                    <span className="datetime-icon">📅</span>
+                                    <span>
+                                    {formatDateTime(task.dueDate, task.dueTime)}
+                                    </span>
+                                </div>
+
+                                <div className="task-time-remaining">
+                                    <span className="time-icon">⏱️</span>
+                                    <span className={isOverdue ? 'overdue-text' : ''}>
+                                    {getTimeRemaining(task)}
+                                    </span>
+                                </div>
+                                </>
+                            ) : (
+                                <div className="no-due-info">No due date/time</div>
+                            )}
+                            </div>
+
+
                       
                       <div className="task-badges">
                         <div className={`status-badge ${statusConfig[task.status].color}`}>
